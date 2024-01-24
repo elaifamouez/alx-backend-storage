@@ -1,48 +1,44 @@
-"""Use this method for you projects [LLM applicatons]"""
-
 #!/usr/bin/env python3
-"""Implementing an expiring web cache and tracker"""
+'''In this tasks, we will implement a get_page
+function (prototype: def get_page(url: str) -> str:). The core of the
+function is very simple. It uses the requests module to obtain the HTML
+content of a particular URL and returns it.
 
-import requests
+Start in a new file named web.py and do not reuse the code
+written in exercise.py.
+
+Inside get_page track how many times a particular URL was accessed
+in the key "count:{url}" and cache the result with an expiration time
+of 10 seconds.
+
+Tip: Use http://slowwly.robertomurray.co.uk to simulate a slow response
+and test your caching.
+Bonus: implement this use case with decorators.
+'''
 import redis
+from typing import Callable
+from requests import get
+from functools import wraps
 
-# Connect to local Redis instance
-r = redis.StrictRedis(host='localhost', port=6379)
 
-
-def count_requests(method):
-    """Decorator to count how many times a URL has been requested"""
-    def wrapper(url):
-        # Increment the count for this URL
-        r.incr(f"count:{url}")
-        return method(url)
+def track_page_count(method: Callable) -> Callable:
+    '''Tracks the number of times a URL is accessed'''
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        '''Wrapper function'''
+        cache = redis.Redis()
+        url = args[0]
+        key = "count:{}".format(url)
+        cache.incr(key)
+        page = cache.get(url)
+        if page is not None:
+            return page.decode('utf-8')
+        page = method(self, *args, **kwargs)
+        cache.setex(url, 10, page)
+        return page
     return wrapper
 
 
-def cache_page(method):
-    """Decorator to cache pages and set an expiration time"""
-    def wrapper(url):
-        # Check if the page is already cached
-        cached_content = r.get(f"cached:{url}")
-        if cached_content:
-            return cached_content.decode('utf-8')
-
-        # If not cached, fetch the content and cache it
-        content = method(url)
-        r.setex(f"cached:{url}", 10, content)
-        return content
-    return wrapper
-
-
-@count_requests
-@cache_page
 def get_page(url: str) -> str:
-    """Obtain the HTML content of a particular URL and return it"""
-    res = requests.get(url)
-    return res.text
-
-
-if __name__ == "__main__":
-    url = 'http://slowwly.robertomurray.co.uk'
-    content = get_page(url)
-    print(content)
+    '''Gets the HTML content of a particular URL'''
+    return get(url).text
