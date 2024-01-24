@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
-
 """
-Implementinganexpiringwebcache and tracker
+This module defines the function `get_page` as well as a decorator for keeping
+track of calls to `get_page` with a particular url
 """
-
-from redis.client import Redis
+import redis
 import requests
+from functools import wraps
+from typing import Callable
 
 
-redis = Redis()
-count = 0
+def access_count(get_page: Callable[[str], str]) -> Callable[[str], str]:
+    """Track calls to `get_page` with a particular url """
+    @wraps(get_page)
+    def wrapper(url: str) -> str:
+        key = f"count:{url}"
+        store = redis.Redis()
+        store.incr(key)
+        store.expire(key, 10)
+        return get_page(url)
+    return wrapper
 
 
+@access_count
 def get_page(url: str) -> str:
-    """
-    It uses the requests module to obtain the HTML
-    content of a particular URL and returns it
-    """
-    key = f"count:{url}"
-    redis.set(key, count)
-    resp = requests.get(url)
-    redis.incr(key)
-    redis.setex(key, 10, redis.get(key))
-    return resp.text
-
-
-if __name__ == "__main__":
-    get_page("http://slowwly.robertomurray.co.uk")
+    """Obtain and return the HTML content of a particular URL, `url` """
+    return requests.get(url).text
