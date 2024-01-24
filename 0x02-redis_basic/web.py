@@ -1,51 +1,48 @@
+"""Use this method for you projects [LLM applicatons]"""
+
 #!/usr/bin/env python3
-"""
-we will implement a get_page function
-(prototype: def get_page(url: str) -> str:).
-The core of the function is very simple.
-It uses the requests module to obtain the HTML content of a particular URL
-and returns it.
+"""Implementing an expiring web cache and tracker"""
 
-Start in a new file named web.py and do not reuse
-the code written in exercise.py.
-
-Inside get_page track how many times a particular URL was accessed
-in the key "count:{url}" and cache the result with an expiration
-time of 10 seconds.
-
-Tip: Use http://slowwly.robertomurray.co.uk to simulate a slow response
-and test your caching.
-Bonus: implement this use case with decorators.
-"""
 import requests
-from functools import wraps
 import redis
-from typing import Callable
+
+# Connect to local Redis instance
+r = redis.StrictRedis(host='localhost', port=6379)
 
 
+def count_requests(method):
+    """Decorator to count how many times a URL has been requested"""
+    def wrapper(url):
+        # Increment the count for this URL
+        r.incr(f"count:{url}")
+        return method(url)
+    return wrapper
+
+
+def cache_page(method):
+    """Decorator to cache pages and set an expiration time"""
+    def wrapper(url):
+        # Check if the page is already cached
+        cached_content = r.get(f"cached:{url}")
+        if cached_content:
+            return cached_content.decode('utf-8')
+
+        # If not cached, fetch the content and cache it
+        content = method(url)
+        r.setex(f"cached:{url}", 10, content)
+        return content
+    return wrapper
+
+
+@count_requests
+@cache_page
 def get_page(url: str) -> str:
-    """
-    This function uses the requests module to obtain the HTML
-    content of a particular URL and returns it.
-    """
-    # create a redis instance
-    redis_client = redis.Redis()
+    """Obtain the HTML content of a particular URL and return it"""
+    res = requests.get(url)
+    return res.text
 
-    # check if url is already cached
-    cached_content = redis_client.get(url)
-    if cached_content:
-        return cached_content
 
-    # get url html content
-    page = requests.get(url)
-
-    page_content = page.text
-
-    # cache content and set an expiry time
-    redis_client.setex(url, 10, page_content)
-
-    # get number of time url is accessed
-    url_count_key = f"count:{url}"
-    redis_client.incr(url_count_key)
-
-    return page_content
+if __name__ == "__main__":
+    url = 'http://slowwly.robertomurray.co.uk'
+    content = get_page(url)
+    print(content)
