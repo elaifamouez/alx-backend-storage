@@ -1,38 +1,39 @@
+#!/usr/bin/env python3
+''' this module implements function track how many times a url is called'''
 import requests
-import time
+import redis
 from functools import wraps
+from typing import Callable
 
-# Cache dictionary to store results with expiration time
-cache = {}
 
-def cache_result(func):
+def counter_fun(func: Callable) -> Callable:
+    '''decorator to track how many times a url is called
+    and cache but the cache expires in 10sec'''
+    redis_client = redis.Redis()
+
     @wraps(func)
-    def wrapper(url):
-        # Check if the result is cached and not expired
-        if url in cache and time.time() - cache[url]['timestamp'] < 10:
-            print(f"Using cached result for {url}")
-            cache[url]['count'] += 1
-            return cache[url]['content']
-        else:
-            print(f"Fetching fresh content for {url}")
-            content = func(url)
-            # Cache the result
-            cache[url] = {'content': content, 'timestamp': time.time(), 'count': 1}
-            return content
-    return wrapper
+    def inner(url):
+        '''innner function for wdecorator'''
+        key = 'count:' + url
+        redis_client.incr(key)
 
-@cache_result
+        cached_html = redis_client.get(url)
+        if cached_html:
+            return cached_html.decode("utf-8")
+
+        result = func(url)
+        redis_client.set(url, result, ex=10)
+        redis_client.expire(url, 10)
+        return result
+    return inner
+
+
+@counter_fun
 def get_page(url: str) -> str:
-    try:
-        response = requests.get(url)
-        return response.text
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching {url}: {e}")
-        return ""
+    '''this function get a page and return the html of tha page'''
+    html = requests.get(url).text
+    return html
+
 
 if __name__ == "__main__":
-    # Test the get_page function
-    for _ in range(5):
-        print(get_page("http://slowwly.robertomurray.co.uk/delay/5000/url/http://www.google.com"))
-        time.sleep(2)  # Wait for 2 seconds
-
+    get_page('http://slowwly.robertomurray.co.uk')
